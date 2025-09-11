@@ -10,7 +10,7 @@ const (
 
 // Achievement representa un logro disponible en un juego.
 type Achievement struct {
-	ID          ID     `json:"id"`
+	ID          string     `json:"game_id"`
 	Name        string `json:"name"`
 	Points      int    `json:"points"`
 	Description string `json:"description"`

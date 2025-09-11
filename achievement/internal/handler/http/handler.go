@@ -25,8 +25,7 @@ func (h *Handler) GetAchievement(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ctx := req.Context()
-	a, err := h.ctrl.Get(ctx, id)
+	a, err := h.ctrl.List(id)
 	if err != nil && errors.Is(err, repository.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
 		return

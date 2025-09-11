@@ -43,7 +43,7 @@ func main() {
 	repo := memory.New()
 	ctrl := achievementController.New(repo)
 	h := httpHandler.New(ctrl)
-	http.Handle("/achievement", http.HandlerFunc(h.Handle))
+	http.HandleFunc("/achievement", h.GetAchievement)
 	if err := http.ListenAndServe(fmt.Sprintf(":%d", port), nil); err != nil {
 		panic(err)
 	}

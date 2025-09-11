@@ -1,7 +1,6 @@
 package memory
 
 import (
-	"context"
 	"sync"
 
 	"ultimategaming.com/achievement/internal/repository"
@@ -19,21 +18,18 @@ func New() *Repository {
 	}
 }
 
-func (r *Repository) Get(_ context.Context, id string) (*model.Achievement, error) {
-	r.RLock()
-	defer r.RUnlock()
+func (r *Repository) ListByGameID(gameID string) ([]model.Achievement, error) {
+    r.RLock()
+    defer r.RUnlock()
 
-	a, ok := r.data[id]
-	if !ok {
-		return nil, repository.ErrNotFound
-	}
-	return a, nil
-}
-
-func (r *Repository) Put(_ context.Context, id string, a *model.Achievement) error {
-	r.Lock()
-	defer r.Unlock()
-
-	r.data[id] = a
-	return nil
+    out := make([]model.Achievement, 0)
+    for _, a := range r.data {
+        if a.ID == gameID {
+            out = append(out, *a)
+        }
+    }
+    if len(out) == 0 {
+        return nil, repository.ErrNotFound
+    }
+    return out, nil
 }
