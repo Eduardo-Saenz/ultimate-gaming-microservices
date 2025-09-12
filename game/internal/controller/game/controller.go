@@ -8,6 +8,7 @@ import (
 	"ultimategaming.com/game/internal/gateway"
 	"ultimategaming.com/game/pkg/model"
 	metadataModel "ultimategaming.com/metadata/pkg/model"
+	"ultimategaming.com/pkg/discovery/consul"
 )
 
 var ErrNotFound = errors.New("Game metadata not found")
@@ -25,10 +26,11 @@ type metadataGateway interface {
 type Controller struct {
 	achievementGateway achievementGateway
 	metadataGateway    metadataGateway
+	registry           *consul.Registry
 }
 
-func New(achievementGateway achievementGateway, metadataGateway metadataGateway) *Controller {
-	return &Controller{achievementGateway, metadataGateway}
+func New(achievementGateway achievementGateway, metadataGateway metadataGateway, registry *consul.Registry) *Controller {
+	return &Controller{achievementGateway, metadataGateway, registry}
 }
 
 func (c *Controller) Get(ctx context.Context, id string) (*model.GameDetails, error) {
