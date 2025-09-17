@@ -2,4 +2,8 @@ package repository
 
 import "errors"
 
-var ErrNotFound = errors.New("Not found")
+// Errores de dominio del repositorio
+var (
+    ErrNotFound      = errors.New("not found")
+    ErrAlreadyExists = errors.New("already exists")
+)

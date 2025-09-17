@@ -1,55 +1,81 @@
-package http
+package metadata
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"math/rand"
 	"net/http"
+	"net/url"
+	"time"
 
-	"ultimategaming.com/game/internal/gateway"
-	model "ultimategaming.com/metadata/pkg/model"
-	discovery "ultimategaming.com/pkg/registry"
+	discovery "ultimategaming.com/game/internal/gateway/resolver"
 )
 
-type Gateway struct {
-	registry discovery.Registry
+type Client interface {
+	Get(gameID string) (*MetadataDTO, error)
 }
 
-func New(registry discovery.Registry) *Gateway {
-	return &Gateway{registry}
+type MetadataDTO struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Genre       string `json:"genre,omitempty"`
+	Developer   string `json:"developer,omitempty"`
+	ReleaseYear int    `json:"releaseYear,omitempty"`
 }
 
-func (g *Gateway) Get(ctx context.Context, id string) (*model.Metadata, error) {
-	addrs, err := g.registry.ServiceAddress(ctx, "metadata")
-	if err != nil {
-		return nil, err
+type HTTPClient struct {
+	resolver      discovery.Resolver
+	serviceName   string // normalmente "metadata"
+	httpClient    *http.Client
+	basePathMeta  string // "/metadata"
+}
+
+func NewHTTPClient(res discovery.Resolver, serviceName string) *HTTPClient {
+	if serviceName == "" {
+		serviceName = "metadata"
 	}
-	url := "http://" + addrs[rand.Intn(len(addrs))] + "/metadata"
-	log.Printf("%s", "Calling metadata service, request: GET "+url)
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+	return &HTTPClient{
+		resolver:    res,
+		serviceName: serviceName,
+		httpClient: &http.Client{
+			Timeout: 3 * time.Second,
+		},
+		basePathMeta: "/metadata",
 	}
-	req = req.WithContext(ctx)
-	values := req.URL.Query()
-	values.Add("id", id)
-	req.URL.RawQuery = values.Encode()
-	resp, err := http.DefaultClient.Do(req)
+}
+
+func (c *HTTPClient) Get(gameID string) (*MetadataDTO, error) {
+	addr, err := c.resolver.Resolve(c.serviceName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolver error: %w", err)
+	}
+
+	u := url.URL{
+		Scheme: "http",
+		Host:   addr,
+		Path:   c.basePathMeta,
+	}
+	q := u.Query()
+	q.Set("id", gameID)
+	u.RawQuery = q.Encode()
+
+	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, gateway.ErrNotFound
-	} else if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("non-2xx response: %v", resp)
+		return nil, fmt.Errorf("metadata not found for game %s", gameID)
 	}
-	var v *model.Metadata
-	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
-		return nil, err
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status from metadata: %s", resp.Status)
 	}
 
-	return v, nil
+	var out MetadataDTO
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode error: %w", err)
+	}
+	return &out, nil
 }

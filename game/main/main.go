@@ -11,14 +11,16 @@ import (
 	"syscall"
 	"time"
 
-	metadataController "ultimategaming.com/metadata/internal/controller/metadata"
-	httpHandler "ultimategaming.com/metadata/internal/handler/http"
-	"ultimategaming.com/metadata/internal/repository/memory"
+	gameController "ultimategaming.com/game/internal/controller/game"
+	achievement "ultimategaming.com/game/internal/gateway/achievement/http"
+	metadata "ultimategaming.com/game/internal/gateway/metadata/http"
+	res "ultimategaming.com/game/internal/gateway/resolver"
+	httpHandler "ultimategaming.com/game/internal/handler/http"
 	"ultimategaming.com/pkg/discovery/consul"
 	discovery "ultimategaming.com/pkg/registry"
 )
 
-const serviceName = "metadata"
+const serviceName = "game"
 
 func main() {
 	// ===== Config =====
@@ -27,7 +29,7 @@ func main() {
 		host       string
 		consulAddr string
 	)
-	flag.IntVar(&port, "port", 8082, "HTTP port for the service")
+	flag.IntVar(&port, "port", 8083, "HTTP port for the service")
 	flag.StringVar(&host, "host", "127.0.0.1", "Service host/address to publish in Consul")
 	flag.StringVar(&consulAddr, "consul", "127.0.0.1:8500", "Consul address (host:port)")
 	flag.Parse()
@@ -36,7 +38,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// ===== Registry (wrapper del profe) =====
+	// ===== Registry (wrapper del profe, servidor) =====
 	registry, err := consul.NewRegistry(consulAddr)
 	if err != nil {
 		log.Fatalf("registry init error: %v", err)
@@ -45,7 +47,6 @@ func main() {
 	instanceID := discovery.GenerateInstanceID(serviceName)
 	serviceAddr := fmt.Sprintf("%s:%d", host, port)
 
-	// Registro inicial
 	if err := registry.Register(ctx, instanceID, serviceName, serviceAddr); err != nil {
 		log.Fatalf("consul register error: %v", err)
 	}
@@ -68,28 +69,32 @@ func main() {
 		}
 	}()
 
-	// ===== Dependencias =====
-	repo := memory.New()
-	ctrl := metadataController.New(repo)
+	// ===== Resolver =====
+	resolver, err := res.NewConsulResolver("127.0.0.1:8500") // o la dirección de Consul
+	if err != nil {
+		log.Fatalf("failed to init resolver: %v", err)
+	}
+
+	achGW := achievement.NewHTTPClient(resolver, "achievement")
+	mdGW := metadata.NewHTTPClient(resolver, "metadata")
+	ctrl := gameController.New(achGW, mdGW)
 	h := httpHandler.New(ctrl)
 
 	// ===== Router =====
 	mux := http.NewServeMux()
 	h.Register(mux)
-
-	// (Opcional) Healthz para pruebas manuales
+	// (opcional) healthz
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// ===== Servidor HTTP =====
+	// ===== HTTP server =====
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: mux,
 	}
 
-	// Arrancar servidor
 	go func() {
 		log.Printf("[%s] listening on %s", serviceName, srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

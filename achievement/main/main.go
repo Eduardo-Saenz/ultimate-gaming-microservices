@@ -11,23 +11,23 @@ import (
 	"syscall"
 	"time"
 
-	metadataController "ultimategaming.com/metadata/internal/controller/metadata"
-	httpHandler "ultimategaming.com/metadata/internal/handler/http"
-	"ultimategaming.com/metadata/internal/repository/memory"
+	achievementController "ultimategaming.com/achievement/internal/controller/achievement"
+	httpHandler "ultimategaming.com/achievement/internal/handler/http"
+	"ultimategaming.com/achievement/internal/repository/memory"
 	"ultimategaming.com/pkg/discovery/consul"
 	discovery "ultimategaming.com/pkg/registry"
 )
 
-const serviceName = "metadata"
+const serviceName = "achievement"
 
 func main() {
 	// ===== Config =====
 	var (
-		port       int
-		host       string
+		port      int
+		host      string
 		consulAddr string
 	)
-	flag.IntVar(&port, "port", 8082, "HTTP port for the service")
+	flag.IntVar(&port, "port", 8081, "HTTP port for the service")
 	flag.StringVar(&host, "host", "127.0.0.1", "Service host/address to publish in Consul")
 	flag.StringVar(&consulAddr, "consul", "127.0.0.1:8500", "Consul address (host:port)")
 	flag.Parse()
@@ -68,16 +68,16 @@ func main() {
 		}
 	}()
 
-	// ===== Dependencias =====
+	// ===== Dependencias de la app =====
 	repo := memory.New()
-	ctrl := metadataController.New(repo)
+	ctrl := achievementController.New(repo)
 	h := httpHandler.New(ctrl)
 
-	// ===== Router =====
+	// ===== Router local =====
 	mux := http.NewServeMux()
 	h.Register(mux)
 
-	// (Opcional) Healthz para pruebas manuales
+	// (Opcional) Healthz para probar en navegador (el check real es TTL)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

@@ -1,68 +1,81 @@
-package achievementgateway
+package achievement
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"log"
-	"math/rand"
 	"net/http"
+	"net/url"
+	"time"
 
-	achievementModel "ultimategaming.com/achievement/pkg/model"
-	"ultimategaming.com/game/internal/gateway"
-	discovery "ultimategaming.com/pkg/registry"
+	discovery "ultimategaming.com/game/internal/gateway/resolver"
 )
 
-type Gateway struct {
-	registry discovery.Registry
+type Client interface {
+	ListByGame(gameID string) ([]AchievementDTO, error)
 }
 
-func New(registry discovery.Registry) *Gateway {
-	return &Gateway{registry: registry}
+type AchievementDTO struct {
+	ID          string `json:"id"`
+	GameID      string `json:"gameId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Points      int    `json:"points"`
+	Secret      bool   `json:"secret"`
 }
 
-// ListByRecord obtiene la lista de logros para un juego (recordID, recordType=game).
-func (g *Gateway) ListByRecord(
-	ctx context.Context,
-	recordID achievementModel.RecordID,
-	recordType achievementModel.RecordType,
-) ([]achievementModel.Achievement, error) {
+type HTTPClient struct {
+	resolver           discovery.Resolver
+	serviceName        string // normalmente "achievement"
+	httpClient         *http.Client
+	basePathAchievements string // "/achievements"
+}
 
-	addrs, err := g.registry.ServiceAddress(ctx, "achievement")
-	if err != nil {
-		return nil, err
+func NewHTTPClient(res discovery.Resolver, serviceName string) *HTTPClient {
+	if serviceName == "" {
+		serviceName = "achievement"
 	}
-	// Endpoint típico estilo REST: GET /achievements?recordId=...&recordType=game
-	url := "http://" + addrs[rand.Intn(len(addrs))] + "/achievements"
-
-	log.Printf("Calling achievement service, request: GET %s", url)
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
+	return &HTTPClient{
+		resolver:    res,
+		serviceName: serviceName,
+		httpClient: &http.Client{
+			Timeout: 3 * time.Second,
+		},
+		basePathAchievements: "/achievements",
 	}
-	req = req.WithContext(ctx)
-	q := req.URL.Query()
-	q.Add("recordId", string(recordID))
-	q.Add("recordType", string(recordType))
-	req.URL.RawQuery = q.Encode()
+}
 
-	resp, err := http.DefaultClient.Do(req)
+func (c *HTTPClient) ListByGame(gameID string) ([]AchievementDTO, error) {
+	addr, err := c.resolver.Resolve(c.serviceName)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolver error: %w", err)
+	}
+
+	u := url.URL{
+		Scheme: "http",
+		Host:   addr,
+		Path:   c.basePathAchievements,
+	}
+	q := u.Query()
+	q.Set("gameId", gameID)
+	u.RawQuery = q.Encode()
+
+	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request error: %w", err)
 	}
 	defer resp.Body.Close()
 
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return nil, gateway.ErrNotFound
-	case resp.StatusCode/100 != 2:
-		return nil, fmt.Errorf("non-2xx response from achievements: %v", resp.Status)
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("achievements not found for game %s", gameID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status from achievement: %s", resp.Status)
 	}
 
-	var list []achievementModel.Achievement
-	if err := json.NewDecoder(resp.Body).Decode(&list); err != nil {
-		return nil, err
+	var out []AchievementDTO
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decode error: %w", err)
 	}
-	return list, nil
+	return out, nil
 }

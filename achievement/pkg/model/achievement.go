@@ -1,19 +1,13 @@
 package model
 
-type ID string
-type RecordID string
-type RecordType string
+type AchievementID string
+type GameID string
 
-const (
-	RecordTypeGame = RecordType("game")
-)
-
-// Achievement representa un logro disponible en un juego.
 type Achievement struct {
-	ID          string `json:"game_id"`
-	Name        string `json:"name"`
-	Points      int    `json:"points"`
-	Description string `json:"description"`
-	Secret      bool   `json:"secret,omitempty"`
-	Icon        string `json:"icon,omitempty"`
+	ID          AchievementID `json:"id"`          // Identificador único del logro
+	GameID      GameID        `json:"gameId"`      // Identificador del juego al que pertenece
+	Name        string        `json:"name"`        // Nombre del logro
+	Description string        `json:"description"` // Descripción del logro
+	Points      int           `json:"points"`      // Puntos que otorga
+	Secret      bool          `json:"secret"`      // Indica si es secreto/especial
 }

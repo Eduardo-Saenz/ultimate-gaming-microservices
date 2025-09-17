@@ -2,59 +2,46 @@ package game
 
 import (
 	"context"
-	"errors"
+	"strings"
 
-	achievementModel "ultimategaming.com/achievement/pkg/model"
-	"ultimategaming.com/game/internal/gateway"
-	"ultimategaming.com/game/pkg/model"
-	metadataModel "ultimategaming.com/metadata/pkg/model"
-	"ultimategaming.com/pkg/discovery/consul"
+	achievement "ultimategaming.com/game/internal/gateway/achievement/http"
+	metadata "ultimategaming.com/game/internal/gateway/metadata/http"
 )
 
-var ErrNotFound = errors.New("Game metadata not found")
-
-type achievementGateway interface {
-	// Lista los logros de un record (juego).
-	ListByRecord(ctx context.Context, recordID achievementModel.RecordID, recordType achievementModel.RecordType) ([]achievementModel.Achievement, error)
-}
-
-type metadataGateway interface {
-	// Obtiene la metadata de un juego por ID.
-	Get(ctx context.Context, id string) (*metadataModel.Metadata, error)
-}
-
+// Controller usa los gateways para armar la respuesta de "detalles de juego".
 type Controller struct {
-	achievementGateway achievementGateway
-	metadataGateway    metadataGateway
-	registry           *consul.Registry
+	ach achievement.Client
+	md  metadata.Client
 }
 
-func New(achievementGateway achievementGateway, metadataGateway metadataGateway, registry *consul.Registry) *Controller {
-	return &Controller{achievementGateway, metadataGateway, registry}
+func New(achGW achievement.Client, mdGW metadata.Client) *Controller {
+	return &Controller{ach: achGW, md: mdGW}
 }
 
-func (c *Controller) Get(ctx context.Context, id string) (*model.GameDetails, error) {
-	// 1) Traer metadata del juego
-	metadata, err := c.metadataGateway.Get(ctx, id)
-	if err != nil && errors.Is(err, gateway.ErrNotFound) {
-		return nil, ErrNotFound
-	} else if err != nil {
+// GameDetails es el DTO de salida del servicio "game".
+type GameDetails struct {
+	Metadata     *metadata.MetadataDTO         `json:"metadata"`
+	Achievements []achievement.AchievementDTO  `json:"achievements"`
+}
+
+// GetDetails regresa metadata + achievements de un juego.
+func (c *Controller) GetDetails(ctx context.Context, gameID string) (*GameDetails, error) {
+	if strings.TrimSpace(gameID) == "" {
+		return nil, ErrInvalidInput
+	}
+
+	md, err := c.md.Get(gameID)
+	if err != nil {
 		return nil, err
 	}
 
-	details := &model.GameDetails{Metadata: *metadata}
-
-	achievements, err := c.achievementGateway.ListByRecord(
-		ctx,
-		achievementModel.RecordID(id),
-		achievementModel.RecordTypeGame,
-	)
-	if err != nil && !errors.Is(err, gateway.ErrNotFound) {
+	achs, err := c.ach.ListByGame(gameID)
+	if err != nil {
 		return nil, err
-	} else if err == nil {
-		details.Achievements = achievements
 	}
 
-	return details, nil
-
+	return &GameDetails{
+		Metadata:     md,
+		Achievements: achs,
+	}, nil
 }

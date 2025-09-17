@@ -5,19 +5,21 @@ import (
 	"sync"
 
 	"ultimategaming.com/metadata/internal/repository"
-	model "ultimategaming.com/metadata/pkg/model"
+	"ultimategaming.com/metadata/pkg/model"
 )
 
 type Repository struct {
 	sync.RWMutex
-	data map[string]*model.Metadata
+	data map[model.GameID]*model.Metadata
 }
 
 func New() *Repository {
-	return &Repository{data: map[string]*model.Metadata{}}
+	return &Repository{
+		data: make(map[model.GameID]*model.Metadata),
+	}
 }
 
-func (r *Repository) Get(_ context.Context, id string) (*model.Metadata, error) {
+func (r *Repository) Get(ctx context.Context, id model.GameID) (*model.Metadata, error) {
 	r.RLock()
 	defer r.RUnlock()
 
@@ -25,13 +27,18 @@ func (r *Repository) Get(_ context.Context, id string) (*model.Metadata, error) 
 	if !ok {
 		return nil, repository.ErrNotFound
 	}
-
-	return m, nil
+	cp := *m
+	return &cp, nil
 }
 
-func (r *Repository) Put(_ context.Context, id string, metadata *model.Metadata) error {
+func (r *Repository) Create(ctx context.Context, m model.Metadata) error {
 	r.Lock()
 	defer r.Unlock()
-	r.data[id] = metadata
+
+	if _, exists := r.data[m.ID]; exists {
+		return repository.ErrAlreadyExists
+	}
+	cp := m
+	r.data[m.ID] = &cp
 	return nil
 }

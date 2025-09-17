@@ -2,31 +2,33 @@ package metadata
 
 import (
 	"context"
-	"errors"
+	"strings"
 
-	model "ultimategaming.com/metadata/pkg/model"
+	"ultimategaming.com/metadata/internal/repository"
+	"ultimategaming.com/metadata/pkg/model"
 )
 
-var ErrNotFound = errors.New("Not found")
-
-type metadataRepository interface {
-	Get(ctx context.Context, id string) (*model.Metadata, error)
-}
-
 type Controller struct {
-	repo metadataRepository
+	repo repository.Repository
 }
 
-func New(repo metadataRepository) *Controller {
-	return &Controller{repo}
+func New(r repository.Repository) *Controller {
+	return &Controller{repo: r}
 }
 
-func (c *Controller) Get(ctx context.Context, id string) (*model.Metadata, error) {
-	res, err := c.repo.Get(ctx, id)
-
-	if err != nil {
-		return nil, ErrNotFound
+// Get devuelve la metadata de un juego por su ID.
+func (c *Controller) Get(ctx context.Context, id model.GameID) (*model.Metadata, error) {
+	if strings.TrimSpace(string(id)) == "" {
+		return nil, ErrInvalidInput
 	}
+	return c.repo.Get(ctx, id)
+}
 
-	return res, err
+// Create valida e inserta una nueva metadata.
+func (c *Controller) Create(ctx context.Context, m model.Metadata) error {
+	if strings.TrimSpace(string(m.ID)) == "" ||
+		strings.TrimSpace(m.Name) == "" {
+		return ErrInvalidInput
+	}
+	return c.repo.Create(ctx, m)
 }
